@@ -6,14 +6,16 @@ const puppeteer = require('puppeteer');
 const { getAverageColor } = require('fast-average-color-node');
 const axios = require('axios');
 var bodyParser = require('body-parser');
-const { Cheerio } = require("cheerio");
+const { sql } = require("./sql/db");
+const { model, generationConfig, safetySettings } = require("./Gemini/Gemini")
+
 
 var urlencodedParser = bodyParser.urlencoded({ extended: true })
 var jsonParser = bodyParser.json()
 
 const corsOptions = {
   //   origin: "https://mplayer1.netlify.app",
-  origin: "http://localhost:8001", //your frontend url here
+  // origin: "http://localhost:8081", //your frontend url here
   credentials: true, //access-control-allow-credentials:true
   optionSuccessStatus: 200,
   exposedHeaders: "**",
@@ -199,11 +201,11 @@ app.get("/search", async (req, res, next) => {
 
     await page.goto(`https://music.youtube.com/search?q=${req.query.url}`, { waitUntil: 'load' });
 
-    await page.waitForSelector('ytmusic-responsive-list-item-renderer')
+    await page.waitForSelector('ytmusic-shelf-renderer', { visible: true })
 
     await page.screenshot({ path: '1.png', fullPage: true });
 
-    const data = await page.evaluate(() => {
+    let data = await page.evaluate(async () => {
 
       const lists_obj = document.querySelectorAll('ytmusic-shelf-renderer');
       let idx1 = 0;
@@ -224,11 +226,11 @@ app.get("/search", async (req, res, next) => {
         const link_str = Selection.querySelector('a').getAttribute('href');
 
         return {
-          name: Selection.querySelector('a').innerHTML.trim(),
+          name: Selection.querySelector('a').innerHTML?.trim() || 'Failed to load',
           link: `/${link_str}`,
           image: `https://img.youtube.com/vi/${link_str.split('?v=')[1]}/sddefault.jpg`,
           // image: Selection.querySelector('a').querySelector('img').getAttribute('src'),
-          artist: Selection.querySelectorAll('yt-formatted-string')[1].querySelector('a').innerHTML.trim()
+          artist: Selection.querySelectorAll('yt-formatted-string')[1].querySelector('a').innerHTML?.trim() || 'Failed to load'
         };
       });
 
@@ -244,36 +246,37 @@ app.get("/search", async (req, res, next) => {
           link: `/${link_str}`,
           img: img,
           // image: Selection.querySelector('a').querySelector('img').getAttribute('src'),
-          info: Selection.querySelectorAll('a')[1].innerHTML.trim()
+          info: Selection.querySelectorAll('a')[1].innerHTML?.trim() || 'Failed to load'
         };
       });
 
-
       urls = {
         'songs': song_urls,
-        'albums': album_urls
+        'albums': album_urls,
       }
 
       return urls;
     });
 
-    await page.screenshot({ path: `0.png` });
+    const se = `%${req.query.url}%`
+    const album2 = await sql`select a.title, a.image as img, a.info, a.id from album a where a.title ilike ${se}`
+    const song2 = await sql`select t.title as name, t.link , t.image, u.username as artist  from track t inner join users u on t.userid = u.id where t.title ilike ${se}`
 
-    let length = data['albums'].length
+    data['album2'] = album2
+    data['song2'] = song2
 
-    for (let i = 0; i < length; i++) {
-      await page.goto(`https://music.youtube.com${data['albums'][i].link}`, { waitUntil: 'load' })
-      await page.screenshot({ path: `${i + 3}.png` })
-      const url = await page.url();
-      data['albums'][i].link = url.split('.com/')[1]
-    }
+    // await page.screenshot({ path: `0.png` });
+
+    // let length = data['albums'].length
+
+    // for (let i = 0; i < length; i++) {
+    //   await page.goto(`https://music.youtube.com${data['albums'][i].link}`, { waitUntil: 'load' })
+    //   await page.screenshot({ path: `${i + 3}.png` })
+    //   const url = await page.url();
+    //   data['albums'][i].link = url.split('.com/')[1]
+    // }
 
     await browser.close();
-
-    // data['albums'].map(async (item, index) => {
-    //   // await axios.get(`https://music.youtube.com${item.link}`, { headers: { 'User-Agent': customUA } }).then((response) => { console.log(response); })
-    //   await
-    // })
 
     res.send(data)
   }
@@ -282,6 +285,634 @@ app.get("/search", async (req, res, next) => {
     // res.send(error)
   }
 
+})
+
+
+//SQL PATH
+
+/**
+ * @param {key, username, password  }
+ * @return {user}
+ */
+app.post("/getUser", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = null
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const string = `select * from users where username = '${req.body.username}' or email = '${req.body.username}' and password = '${req.body.password}' `
+      const user = await sql`select * from users where (username = ${req.body.username} or email = ${req.body.username}) and password = ${req.body.password} `
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, username, password  }
+ * @return {user}
+ */
+app.post("/getAdmin", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = [{}]
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`select u.*, 'admin' as role from users u inner join "admin" a on u.id = a.id where (u.username=${req.body.username} or u.email=${req.body.username}) and u."password" =${req.body.password}`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, username, password  }
+ * @return {user}
+ */
+app.post("/getArtist", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = [{}]
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`select u.*, 'artist' as role from users u inner join "artist" a on u.id = a.id where (u.username=${req.body.username} or u.email=${req.body.username}) and u."password" =${req.body.password}`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, username, password }
+ * @return {user}
+ */
+app.post("/upArtist", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = [{}]
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`SELECT * FROM insert_artist(${req.body.username}, ${req.body.password});`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key}
+ * @return {user}
+ */
+app.post("/getUsers", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = null
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`select u.* from users u left join "admin" a on u.id = a.id where a.id is null`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, username, password, emal, nickname}
+ * @return {user}
+ */
+app.post("/addUser", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = null
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`select * from users where (username = ${req.body.username} or email = ${req.body.email})`
+      if (user.length != 0)
+        data = 'Already exist user'
+      else {
+        const newuser = {
+          'username': req.body.username,
+          'email': req.body.email,
+          'nickname': req.body.nickname,
+          'password': req.body.password,
+          'ban': false
+        }
+        data = await sql` insert into users ${sql(newuser, 'username', 'email', 'nickname', 'password', 'ban')} returning id,username,email,nickname,password,ban`
+      }
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+
+/**
+ * @param {key, ids:[[3], [5]]}
+ * @return {user}
+ */
+app.post("/banUser", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = null
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      data = await sql`
+      update users set ban = true
+      from (values ${sql(response.ids)}) as update_data(id)
+      where users.id = update_data.id
+      returning users.id, users.username, users.email, users.ban`
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+
+/**
+ * @param {key, username, password, emal, nickname, id}
+ * @return {user}
+ */
+app.post("/updateUser", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = null
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const newuser = {
+        'id': req.body.id,
+        'username': req.body.username,
+        'email': req.body.email,
+        'nickname': req.body.nickname,
+        'password': req.body.password
+      }
+      data = await sql`
+      update users set ${sql(newuser, 'username', 'email', 'nickname', 'password')}
+      where users.id = ${newuser.id}
+      returning users.*`
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+
+/**
+ * @param {key, ids:[[3], [5]]}
+ * @return {user}
+ */
+app.post("/unbanUser", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = null
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      data = await sql`
+      update users set ban = false
+      from (values ${sql(response.ids)}) as update_data(id)
+      where users.id = update_data.id
+      returning users.id, users.username, users.email, users.ban`
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, username }
+ * @return {user}
+ */
+app.post("/getArtistAlbums", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`select a.*, u2.username  from album a inner join artist u on a.userid = u.id inner join users u2 on u.id = u2.id where u2.username = ${req.body.username}`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, id }
+ * @return {user}
+ */
+app.post("/getArtistAlbum", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`select * from album a where a.id = ${req.body.id}`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, title, userid, imagem info, id }
+ * @return {user}
+ */
+app.post("/updateArtistAlbum", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`update album
+      set title =${req.body.title}, userid = ${req.body.userid}, image =${req.body.image}, info = ${req.body.info}
+      where id = ${req.body.id}
+      returning album.*`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, id }
+ * @return {user}
+ */
+app.post("/delArtistAlbum", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      await sql`DELETE FROM track 
+      WHERE albumid = ${req.body.id}`
+      const user = await sql`delete from album 
+      where id = ${req.body.id} returning album.*`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, title, userid, image, info }
+ * @return {user}
+ */
+app.post("/addArtistAlbum", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+
+      const newtrack = {
+        'title': req.body.title,
+        'userid': req.body.userid,
+        'image': req.body.image,
+        'info': req.body.info
+      }
+      // console.log(newtrack)
+      const user = await sql` insert into album ${sql(newtrack, 'title', 'userid', 'image', 'info')} returning album.*`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+
+/**
+ * @param {key, username }
+ * @return {user}
+ */
+app.post("/getArtistsongs", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`select a.*, u2.username,a2.title as album_title from track a inner join artist u on a.userid = u.id 
+      inner join users u2 on u.id = u2.id
+      inner join album a2 on a.albumid = a2.id 
+      where u2.username = ${req.body.username}`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, id }
+ * @return {user}
+ */
+app.post("/getArtistsong", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`select * from track t where t.id = ${req.body.id}`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, title, albumid, image, id }
+ * @return {user}
+ */
+app.post("/updateArtistsong", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`update track 
+      set title = ${req.body.title}, albumid = ${req.body.albumid}, image = ${req.body.image}
+      where track.id = ${req.body.id} returning track.*`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, id }
+ * @return {user}
+ */
+app.post("/delArtistsong", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`delete from track 
+      where id = ${req.body.id} returning track.*`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, title, userid, albumid, image, link }
+ * @return {user}
+ */
+app.post("/addArtistsong", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      // const newuser = {
+      //   'username': req.body.username,
+      //   'email': req.body.email,
+      //   'nickname': req.body.nickname,
+      //   'password': req.body.password,
+      //   'ban': false
+      // }
+      // data = await sql` insert into users ${sql(newuser, 'username', 'email', 'nickname', 'password', 'ban')} returning id,username,email,nickname,password,ban`
+
+      const newtrack = {
+        'title': req.body.title,
+        'userid': req.body.userid,
+        'albumid': req.body.albumid,
+        'image': req.body.image,
+        'link': req.body.link
+      }
+      const user = await sql` insert into track ${sql(newtrack, 'title', 'userid', 'albumid', 'image', 'link')} returning track.*`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {url:albumid }
+ * @return {album}
+ */
+app.get("/getAlbumSong", async (req, res, next) => {
+  try {
+    let data = []
+    const user = await sql`select t.title as name, t.link , t.image, u.username as artist  
+    from track t inner join users u on t.userid = u.id
+    where t.albumid = ${req.query.url}`
+    if (user.length != 0)
+      data = user
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send(error)
+  }
+})
+
+/**
+ * @param {url:userid }
+ * @return {playlist id}
+ */
+app.get("/getUserPlaylists", async (req, res, next) => {
+  try {
+    let data = []
+    const user = await sql`select id from playlist p where p.userid = ${req.query.url}`
+    if (user.length != 0)
+      data = user
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send(error)
+  }
+})
+
+/**
+ * @param {url:playlistid }
+ * @return {songs}
+ */
+app.get("/getPlaylistSongs", async (req, res, next) => {
+  try {
+    let data = []
+    const user = await sql`select * from playlistdetails p where p.playlistid = ${req.query.url}`
+    if (user.length != 0)
+      data = user
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send(error)
+  }
+})
+
+/**
+ * @param {key, title, userid, image, info }
+ * @return {user}
+ */
+app.post("/addPlaylist", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+
+      const newtrack = {
+        'userid': req.body.userid,
+        'title': req.body.title,
+        'image': req.body.image,
+        'info': req.body.info
+      }
+      const user = await sql`insert into playlist ${sql(newtrack, 'title', 'userid', 'image', 'info')} returning playlist.*`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, playlistid, name, link, image, artist }
+ * @return {user}
+ */
+app.post("/addPlaylistTrack", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      await axios.get(req.body.link, {
+        responseType: 'stream'
+      }).then((res) => {
+        console.log(res.blob())
+      }).catch((error) => {
+        console.log(error)
+      })
+      const newtrack = {
+        'playlistid': req.body.playlistid,
+        'name': req.body.name,
+        'link': req.body.link,
+        'image': req.body.image,
+        'artist': req.body.artist,
+      }
+      const user = await sql`insert into playlistdetails ${sql(newtrack, 'playlistid', 'name', 'link', 'image', 'artist')}  ON CONFLICT (playlistid, name) DO NOTHING returning playlistdetails.*`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+/**
+ * @param {key, playlistid, name }
+ * @return {user}
+ */
+app.post("/delPlaylistTrack", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = {}
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const user = await sql`delete from playlistdetails where playlistid = ${req.body.playlistid} and name = ${req.body.name} returning playlistdetails.*`
+      if (user.length != 0)
+        data = user
+    }
+    res.send(data)
+  }
+  catch (error) {
+    next(error);
+    res.send("error occur")
+  }
+})
+
+//CHAT BOTS
+
+app.post("/askAI", jsonParser, async (req, res, next) => {
+  try {
+    const response = req.body;
+    let data = ""
+    if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
+      const chatSession = model.startChat({
+        generationConfig,
+        safetySettings,
+      });
+      const result = await chatSession.sendMessage(`${req.body.question}`);
+      console.log(result.response)
+      data = result.response.text()
+    }
+    res.send(data)
+  } catch (error) {
+    console.log(error)
+    next(error)
+    res.send("Cannot chat to the AI right now")
+  }
 })
 
 app.listen(3000, () => {
