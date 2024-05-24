@@ -28,10 +28,10 @@ app.get("/download", async (req, res, next) => {
   try {
     const videoUrl = req.query.url;
     const videoInfo = await ytdl.getInfo(videoUrl);
-    const audioFormats = ytdl.filterFormats(videoInfo.formats, "audioonly");
+    const audioFormats = ytdl.filterFormats(videoInfo.formats, "audioonly").filter(item => item.container == 'mp4');
     // console.log(audioFormats);
-    const urls = audioFormats.map((item) => item.url);
-    res.send(urls[0]);
+    // const urls = audioFormats.map((item) => item.url);
+    res.send(audioFormats[0].url);
   } catch (error) {
     next(error);
   }
