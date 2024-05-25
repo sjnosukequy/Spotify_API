@@ -51,7 +51,8 @@ app.get("/main", async (req, res) => {
     // Set custom user agent
     await page.setUserAgent(customUA);
 
-    await page.goto('https://www.youtube.com/channel/UC-9-kyTW8ZkZNDHQJ6FgpwQ', { waitUntil: 'load' });
+    await page.goto('https://www.youtube.com/channel/UC-9-kyTW8ZkZNDHQJ6FgpwQ');
+    // await page.goto('https://www.youtube.com/channel/UC-9-kyTW8ZkZNDHQJ6FgpwQ', { waitUntil: 'load' });
 
     await page.screenshot({ path: '1.png' });
 
@@ -102,16 +103,14 @@ app.get("/playlist", async (req, res, next) => {
       height: 540
     });
 
-    await page.goto(`https://www.youtube.com/${req.query.url}`, { waitUntil: 'load' });
-
-
+    await page.goto(`https://www.youtube.com/${req.query.url}`);
+    // await page.goto(`https://www.youtube.com/${req.query.url}`, { waitUntil: 'load' });
     await page.screenshot({ path: '1.png' });
 
 
     const data = await page.evaluate(() => {
       const tracks = document.querySelector('#contents.style-scope.ytd-section-list-renderer').querySelector('#contents').querySelector('#contents').querySelectorAll('ytd-playlist-video-renderer');
       const urls = Array.from(tracks).map((Selection, index) => {
-        Selection.scrollIntoView('false');
         const link_str = Selection.querySelector('a').getAttribute('href').split('&')[0];
         return {
           name: Selection.querySelector('h3').querySelector('a').innerHTML.trim(),
@@ -203,7 +202,8 @@ app.get("/search", async (req, res, next) => {
       height: 540
     });
 
-    await page.goto(`https://music.youtube.com/search?q=${req.query.url}`, { waitUntil: 'load' });
+    await page.goto(`https://music.youtube.com/search?q=${req.query.url}`);
+    // await page.goto(`https://music.youtube.com/search?q=${req.query.url}`, { waitUntil: 'load' });
 
     await page.waitForSelector('ytmusic-shelf-renderer', { visible: true })
 
@@ -851,13 +851,6 @@ app.post("/addPlaylistTrack", jsonParser, async (req, res, next) => {
     const response = req.body;
     let data = {}
     if (response.key == "8/k0Y-EJj5S>#/OIA>XB?/q7}") {
-      await axios.get(req.body.link, {
-        responseType: 'stream'
-      }).then((res) => {
-        console.log(res.blob())
-      }).catch((error) => {
-        console.log(error)
-      })
       const newtrack = {
         'playlistid': req.body.playlistid,
         'name': req.body.name,
