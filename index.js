@@ -40,51 +40,55 @@ app.get("/download", async (req, res, next) => {
 app.get("/main", async (req, res) => {
   // console.log(req.query);
   const browser = await puppeteer.launch({ headless: 'new' });
-  const page = await browser.newPage();
+  try {
+    const page = await browser.newPage();
 
-  // Custom user agent
-  const customUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36';
+    // Custom user agent
+    const customUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36';
 
-  await page.setViewport({ width: 1000, height: 890 });
+    await page.setViewport({ width: 1000, height: 890 });
 
-  // Set custom user agent
-  await page.setUserAgent(customUA);
+    // Set custom user agent
+    await page.setUserAgent(customUA);
 
-  await page.goto('https://www.youtube.com/channel/UC-9-kyTW8ZkZNDHQJ6FgpwQ', { waitUntil: 'load' });
+    await page.goto('https://www.youtube.com/channel/UC-9-kyTW8ZkZNDHQJ6FgpwQ', { waitUntil: 'load' });
 
-  await page.screenshot({ path: '1.png' });
+    await page.screenshot({ path: '1.png' });
 
-  const data = await page.evaluate(() => {
-    document.body.scrollIntoView(false);
-    const reco_albums = document.querySelector("ytd-two-column-browse-results-renderer").querySelectorAll("#contents.style-scope.ytd-item-section-renderer");
-    // const lists_album = reco_albums[2].querySelector("div").querySelector("ytmusic-carousel").querySelector("div").querySelector("ul").querySelectorAll("ytmusic-two-row-item-renderer");
-    const urls = Array.from(reco_albums).map((Selection) => {
-      return {
-        name: Selection.querySelector('#title').innerHTML,
-        child: Array.from(Selection.querySelector("#scroll-container").querySelector('#items').querySelectorAll("ytd-compact-station-renderer")).map(
-          (Selection2) => {
-            return {
-              img: Selection2.querySelector('img').getAttribute("src"),
-              link: Selection2.querySelector('a').getAttribute('href').split('&')[0],
-              title: Selection2.querySelector('h3').innerHTML.trim(),
-              info: Selection2.querySelector('p').innerHTML.trim()
-            };
-          })
-      };
+    const data = await page.evaluate(() => {
+      document.body.scrollIntoView(false);
+      const reco_albums = document.querySelector("ytd-two-column-browse-results-renderer").querySelectorAll("#contents.style-scope.ytd-item-section-renderer");
+      // const lists_album = reco_albums[2].querySelector("div").querySelector("ytmusic-carousel").querySelector("div").querySelector("ul").querySelectorAll("ytmusic-two-row-item-renderer");
+      const urls = Array.from(reco_albums).map((Selection) => {
+        return {
+          name: Selection.querySelector('#title').innerHTML,
+          child: Array.from(Selection.querySelector("#scroll-container").querySelector('#items').querySelectorAll("ytd-compact-station-renderer")).map(
+            (Selection2) => {
+              return {
+                img: Selection2.querySelector('img').getAttribute("src"),
+                link: Selection2.querySelector('a').getAttribute('href').split('&')[0],
+                title: Selection2.querySelector('h3').innerHTML.trim(),
+                info: Selection2.querySelector('p').innerHTML.trim()
+              };
+            })
+        };
+      });
+
+      return urls;
     });
 
-    return urls;
-  });
-
-  await browser.close();
-  res.send(data)
+    await browser.close();
+    res.send(data)
+  }
+  catch (error) {
+    await browser.close();
+  }
 });
 
 app.get("/playlist", async (req, res, next) => {
+  const browser = await puppeteer.launch({ headless: true });
   try {
-
     // console.log(req.query);
-    const browser = await puppeteer.launch({ headless: true });
     const page = await browser.newPage();
 
     // Custom user agent
@@ -127,6 +131,7 @@ app.get("/playlist", async (req, res, next) => {
   }
   catch (error) {
     data = `https://www.youtube.com/${req.query.url} Link does not exist`;
+    await browser.close();
     next(error);
     // res.send(data)
   }
@@ -181,11 +186,10 @@ app.get("/getcolor", async (req, res, next) => {
 })
 
 app.get("/search", async (req, res, next) => {
-
+  const browser = await puppeteer.launch({ headless: true });
   try {
 
     // console.log(req.query);
-    const browser = await puppeteer.launch({ headless: true });
     const page = await browser.newPage();
 
     // Custom user agent
@@ -210,8 +214,9 @@ app.get("/search", async (req, res, next) => {
       const lists_obj = document.querySelectorAll('ytmusic-shelf-renderer');
       let idx1 = 0;
       let idx2 = 0;
+      const length = Array.from(lists_obj).length
 
-      for (let i = 0; i < Array.from(lists_obj).length; i++) {
+      for (let i = 0; i < length; i++) {
         const name = lists_obj[i].querySelector('h2').querySelector('yt-formatted-string').innerHTML.trim();
         if (name == 'Songs')
           idx1 = i;
@@ -281,6 +286,7 @@ app.get("/search", async (req, res, next) => {
     res.send(data)
   }
   catch (error) {
+    await browser.close();
     next(error);
     // res.send(error)
   }
