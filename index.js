@@ -39,7 +39,20 @@ app.get("/download", async (req, res, next) => {
 
 app.get("/main", async (req, res) => {
   // console.log(req.query);
-  const browser = await puppeteer.launch({ headless: 'new' });
+  const options = {
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
+      '--disable-gpu'
+    ],
+    headless: true
+  }
+  const browser = await puppeteer.launch(options);
   try {
     const page = await browser.newPage();
 
@@ -47,6 +60,16 @@ app.get("/main", async (req, res) => {
     const customUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36';
 
     await page.setViewport({ width: 1000, height: 890 });
+    await page.setRequestInterception(true);
+
+    page.on('request', (req) => {
+      if (req.resourceType() == 'stylesheet' || req.resourceType() == 'font' || req.resourceType() == 'image') {
+        req.abort();
+      }
+      else {
+        req.continue();
+      }
+    });
 
     // Set custom user agent
     await page.setUserAgent(customUA);
@@ -87,7 +110,20 @@ app.get("/main", async (req, res) => {
 });
 
 app.get("/playlist", async (req, res, next) => {
-  const browser = await puppeteer.launch({ headless: true });
+  const options = {
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
+      '--disable-gpu'
+    ],
+    headless: true
+  }
+  const browser = await puppeteer.launch(options);
   try {
     // console.log(req.query);
     const page = await browser.newPage();
@@ -101,6 +137,17 @@ app.get("/playlist", async (req, res, next) => {
     await page.setViewport({
       width: 960,
       height: 540
+    });
+
+    await page.setRequestInterception(true);
+
+    page.on('request', (req) => {
+      if (req.resourceType() == 'stylesheet' || req.resourceType() == 'font' || req.resourceType() == 'image') {
+        req.abort();
+      }
+      else {
+        req.continue();
+      }
     });
 
     await page.goto(`https://www.youtube.com/${req.query.url}`);
@@ -185,7 +232,20 @@ app.get("/getcolor", async (req, res, next) => {
 })
 
 app.get("/search", async (req, res, next) => {
-  const browser = await puppeteer.launch({ headless: true });
+  const options = {
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
+      '--disable-gpu'
+    ],
+    headless: true
+  }
+  const browser = await puppeteer.launch(options);
   try {
 
     // console.log(req.query);
@@ -200,6 +260,17 @@ app.get("/search", async (req, res, next) => {
     await page.setViewport({
       width: 960,
       height: 540
+    });
+
+    await page.setRequestInterception(true);
+
+    page.on('request', (req) => {
+      if (req.resourceType() == 'stylesheet' || req.resourceType() == 'font' || req.resourceType() == 'image') {
+        req.abort();
+      }
+      else {
+        req.continue();
+      }
     });
 
     await page.goto(`https://music.youtube.com/search?q=${req.query.url}`);
