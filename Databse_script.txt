@@ -1,0 +1,184 @@
+-- DROP SCHEMA public;
+
+-- CREATE SCHEMA public AUTHORIZATION pg_database_owner;
+
+-- DROP SEQUENCE public.album_serial;
+
+CREATE SEQUENCE public.album_serial
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.my_serial;
+
+CREATE SEQUENCE public.my_serial
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.playlist_id_seq;
+
+CREATE SEQUENCE public.playlist_id_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;
+-- DROP SEQUENCE public.track_id_seq;
+
+CREATE SEQUENCE public.track_id_seq
+	INCREMENT BY 1
+	MINVALUE 1
+	MAXVALUE 2147483647
+	START 1
+	CACHE 1
+	NO CYCLE;-- public.users definition
+
+-- Drop table
+
+-- DROP TABLE public.users;
+
+CREATE TABLE public.users (
+	id varchar NOT NULL DEFAULT nextval('my_serial'::regclass),
+	username varchar NOT NULL,
+	email varchar NOT NULL,
+	nickname varchar NOT NULL,
+	"password" varchar NOT NULL,
+	ban bool NULL,
+	CONSTRAINT user_pk PRIMARY KEY (id),
+	CONSTRAINT users_un UNIQUE (username, email)
+);
+
+
+-- public."admin" definition
+
+-- Drop table
+
+-- DROP TABLE public."admin";
+
+CREATE TABLE public."admin" (
+	id varchar NOT NULL,
+	CONSTRAINT admin_fk FOREIGN KEY (id) REFERENCES public.users(id)
+);
+
+
+-- public.artist definition
+
+-- Drop table
+
+-- DROP TABLE public.artist;
+
+CREATE TABLE public.artist (
+	id varchar NOT NULL,
+	CONSTRAINT artist_un UNIQUE (id),
+	CONSTRAINT artist_fk FOREIGN KEY (id) REFERENCES public.users(id)
+);
+
+
+-- public.playlist definition
+
+-- Drop table
+
+-- DROP TABLE public.playlist;
+
+CREATE TABLE public.playlist (
+	id varchar NOT NULL DEFAULT nextval('playlist_id_seq'::regclass),
+	userid varchar NOT NULL,
+	title varchar NOT NULL,
+	image varchar NULL,
+	info varchar NULL,
+	CONSTRAINT playlist_pk PRIMARY KEY (id),
+	CONSTRAINT playlist_fk_userid FOREIGN KEY (userid) REFERENCES public.users(id)
+);
+
+
+-- public.playlistdetails definition
+
+-- Drop table
+
+-- DROP TABLE public.playlistdetails;
+
+CREATE TABLE public.playlistdetails (
+	playlistid varchar NOT NULL,
+	"name" varchar NOT NULL,
+	link varchar NOT NULL,
+	image varchar NOT NULL,
+	artist varchar NOT NULL,
+	CONSTRAINT playlistdetails_pk PRIMARY KEY (playlistid, name),
+	CONSTRAINT playlistdetails_fk FOREIGN KEY (playlistid) REFERENCES public.playlist(id)
+);
+
+
+-- public.album definition
+
+-- Drop table
+
+-- DROP TABLE public.album;
+
+CREATE TABLE public.album (
+	id varchar NOT NULL DEFAULT nextval('album_serial'::regclass),
+	title varchar NOT NULL,
+	userid varchar NOT NULL,
+	image varchar NULL,
+	info varchar NULL,
+	CONSTRAINT album_pk PRIMARY KEY (id),
+	CONSTRAINT album_fk FOREIGN KEY (userid) REFERENCES public.artist(id)
+);
+
+
+-- public.track definition
+
+-- Drop table
+
+-- DROP TABLE public.track;
+
+CREATE TABLE public.track (
+	id varchar NOT NULL DEFAULT nextval('track_id_seq'::regclass),
+	title varchar NOT NULL,
+	userid varchar NOT NULL,
+	albumid varchar NOT NULL,
+	image varchar NULL,
+	link varchar NOT NULL,
+	CONSTRAINT track_pk PRIMARY KEY (id),
+	CONSTRAINT track_fk_albumid FOREIGN KEY (albumid) REFERENCES public.album(id),
+	CONSTRAINT track_fk_userid FOREIGN KEY (userid) REFERENCES public.users(id)
+);
+
+
+
+-- DROP FUNCTION public.insert_artist(varchar, varchar);
+
+CREATE OR REPLACE FUNCTION public.insert_artist(user_username character varying, user_password character varying)
+ RETURNS TABLE(user_id character varying, username character varying, email character varying, nickname character varying, password character varying, ban boolean, role character varying)
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    RETURN QUERY
+    WITH inserted_ids AS (
+        INSERT INTO artist (id)
+        SELECT u.id
+        FROM users u
+        LEFT JOIN "admin" a ON u.id = a.id
+        WHERE a.id IS NULL
+          AND (u.username = user_username OR u.email = user_username)
+          AND u.password = user_password
+        ON CONFLICT (id) DO NOTHING
+        RETURNING id
+    )
+    SELECT u.*, CAST('artist' AS VARCHAR) as role
+    FROM users u
+    JOIN inserted_ids ii ON u.id = ii.id
+    union all 
+    SELECT u.*, CAST('artist' AS VARCHAR) as role
+    FROM users u
+    WHERE (u.username = user_username OR u.email = user_username)
+      AND u.password = user_password
+      AND u.id IN (SELECT id FROM artist);
+END;
+$function$
+;
